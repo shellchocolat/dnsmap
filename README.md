@@ -6,7 +6,7 @@ So you can have a nice view of your domain and subdomains and how they interact 
 
 As an example, you can check very quickly if some of your subdomains are sensitives to subdomain takeover, check what are the publics IPs of your domains, identify some relevant entrypoints, and more :)
 
-This tools doesn't bruteforce subdomain, you have to use an other tool for that and put all of your subdomain into a file with the format:
+This tool doesn't bruteforce subdomains, you have to use your favorite tool for that and put all of your subdomains into a file with the format:
 ```
 DOMAIN:domain.com
 SUBDOMAIN:sub1.domain.com
@@ -17,6 +17,7 @@ SUBDOMAIN:sub1.domain.xyz
 SUBDOMAIN:sub2.domain.xyz
 ```
 
+Below is an example of the output:
 
 ![poc](poc.png)
 
