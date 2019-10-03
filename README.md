@@ -58,3 +58,28 @@ docker run --rm -v /pathToFile/subdomains.txt:/subdomains.txt dnsmap -f subdomai
 ```
 
 Then go to your browser: 127.0.0.1:7474
+
+Some nice requests to the neo4j cypher:
+* display all nodes:
+```
+MATCH (n) RETURN n
+```
+* display all nodes with all relations:
+```
+MATCH (n)-[r]->(m) RETURN n,r,m
+```
+* display nodes+relations for 1 specific node:
+```
+MATCH (n)-[r]->(m) WHERE n.name='test.com' RETURN n,r,m
+```
+* display nodes+relations for 2 specific nodes:
+```
+MATCH (n)-[r]->(m) WHERE n.name='test.com' OR n.name='sub.test.com' RETURN n,r,m
+```
+* display nodes+relations for 1 specific node and with a recursive depth of 3:
+```
+MATCH (n)-[r*1..3]->(m) WHERE n.name='test.com' RETURN n,r,m
+```
+
+
+
