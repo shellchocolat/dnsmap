@@ -2,11 +2,19 @@
 
 Allow to create an interactive map of all DNS records
 
-So you can have a nice view of your domain and your subdomains and how they interact with each other.
+So you can have a nice view of your domain and subdomains and how they interact within each other.
 
-As an example, you can check very quicky if some of your subdomains are sensitives to subdomain takeover, check what are the publics IPs of your domains, identify some pertinent entrypoints, and more :)
+As an example, you can check very quickly if some of your subdomains are sensitives to subdomain takeover, check what are the publics IPs of your domains, identify some relevant entrypoints, and more :)
 
-
+This tools doesn't bruteforce subdomain, you have to use an other tool for that and put all of your subdomain into a file with the format:
+```
+DOMAIN:domain.com
+SUBDOMAIN:sub1.domain.com
+SUBDOMAIN:sub2.domain.com
+SUBDOMAIN:sub3.domain.com
+DOMAIN:domain.xyz
+SUBDOMAIN:sub1.domain.xyz
+SUBDOMAIN:sub2.domain.xyz
 ![poc](poc.png)
 
 ## create the neo4j docker
