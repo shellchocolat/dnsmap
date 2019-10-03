@@ -4,7 +4,8 @@ Allow to create an interactive map of all DNS records
 
 So you can have a nice view of your domain and your subdomains and how they interact with each other.
 
-As an example, you can check very quicky if some of your subdomains are sensitives to subdomain takeover, and more :)
+As an example, you can check very quicky if some of your subdomains are sensitives to subdomain takeover, check what are the publics IPs of your domains, identify some pertinent entrypoints, and more :)
+
 
 ![poc](poc.png)
 
