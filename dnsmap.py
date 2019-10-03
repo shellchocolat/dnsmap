@@ -360,6 +360,7 @@ def main():
     print("[*] display node+relations for 1 specific node:\n\t MATCH (n)-[r]->(m) WHERE n.name='NODE' RETURN n,r,m")
     print("[*] display node+relations for 2 specific nodes:\n\t MATCH (n)-[r]->(m) WHERE n.name='NODE_1'OR n.name='NODE_2' RETURN n,r,m")
     print("[*] display node+relations for 1 specific node and a recursive depth of 2:\n\t MATCH (n)-[r*1..2]->(m) WHERE n.name='NODE' RETURN n,r,m  ")
+    print("[*] or use regex to search all nodes that begins with 'tes':\n\t MATCH (n)-[r]->(m) WHERE n.name =~ 'tes.*' RETURN n,r,m")
     
 
 

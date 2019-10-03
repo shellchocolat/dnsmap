@@ -80,6 +80,10 @@ MATCH (n)-[r]->(m) WHERE n.name='test.com' OR n.name='sub.test.com' RETURN n,r,m
 ```
 MATCH (n)-[r*1..3]->(m) WHERE n.name='test.com' RETURN n,r,m
 ```
+* display all nodes that satisfy a regex:
+```
+MATCH (n)-[r]->(m) WHERE n.name=~'tes.*' RETURN n,r,m
+```
 
 
 
