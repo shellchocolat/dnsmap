@@ -2,6 +2,10 @@
 
 Allow to create an interactive map of all DNS records
 
+So you can have a nice view of your domain and your subdomains and how they interact with each other.
+
+As an example, you can check very quicky if some of your subdomains are sensitives to subdomain takeover, and more :)
+
 ## create the neo4j docker
 ```
 docker run \                                          
