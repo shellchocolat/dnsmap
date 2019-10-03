@@ -162,14 +162,32 @@ def spf_parse(n1,TXT_content):
             create_node('netname', netname)
             create_link(ip, 'netname', netname)
         elif 'all' in e:
+            # all ip are authorized to send email (not good)
+            # Pass = The address passed the test; accept the message. Example: "v=spf1 +all"
             if e[0] == '+':
-                pass
+                create_node('spf_all', '+all')
+                create_link(n1, 'spf_all', '+all')
+
+            # can send email with other server that those listed (not really good: email spoofing)
+            # Soft Fail = The address failed the test, but the result is not definitive; accept & tag any non-compliant mail. Example: "v=spf1 ~all"
             elif e[0] == '~':
-                pass
+                create_node('spf_all', '~all')
+                create_link(n1, 'spf_all', '~all')
+
+            # the spf specify that it is neutral and there could be other servers that could send email
+            # Neutral = The address did not pass or fail the test; do whatever (probably accept the mail). Example: "v=spf1 ?all"
             elif e[0] == '?':
-                pass
+                create_node('spf_all', '?all')
+                create_link(n1, 'spf_all', '?all')
+
+            # only the registred ip (x.x.x.x on the example below)is authorized
+            # v=spf1 ip4:x.x.x.x –all
+            # if v=spf1 -all, then domain cannot send email at all
+            # (Hard) Fail = The address failed the test; bounce any e-mail that does not comply. Example: "v=spf1 -all"
             elif e[0] == '-':
-                pass
+                create_node('spf_all', '-all')
+                create_link(n1, 'spf_all', '-all')
+
         elif 'include' in e:
             inc = e.replace('include:','')
             create_node('INCLUDE', inc)
