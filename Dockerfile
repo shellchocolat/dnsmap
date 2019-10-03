@@ -5,6 +5,6 @@ RUN pip install --upgrade IPWhois \
 	&& pip install --upgrade colorama \
 	&& pip install --upgrade argparse
 
-ADD graphdns.py /
+ADD dnsmap.py /
 
 ENTRYPOINT ["python", "./dnsmap.py"]
