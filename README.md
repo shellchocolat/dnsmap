@@ -8,13 +8,13 @@ As an example, you can check very quickly if some of your subdomains are sensiti
 
 This tool doesn't bruteforce subdomains, you have to use your favorite tool for that and put all of your subdomains into a file with the format:
 ```
-DOMAIN:domain.com
-SUBDOMAIN:sub1.domain.com
-SUBDOMAIN:sub2.domain.com
-SUBDOMAIN:sub3.domain.com
-DOMAIN:domain.xyz
-SUBDOMAIN:sub1.domain.xyz
-SUBDOMAIN:sub2.domain.xyz
+DOMAIN:test.com
+SUBDOMAIN:sub1.test.com
+SUBDOMAIN:sub2.test.com
+SUBDOMAIN:sub3.test.com
+DOMAIN:test.xyz
+SUBDOMAIN:sub1.test.xyz
+SUBDOMAIN:sub2.test.xyz
 ```
 
 Below is an example of the output:
