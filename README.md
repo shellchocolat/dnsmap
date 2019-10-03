@@ -1,4 +1,4 @@
-# Graphdns
+# DnsMap
 
 Allow to create an interactive map of all DNS records
 
