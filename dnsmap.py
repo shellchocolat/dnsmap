@@ -103,8 +103,10 @@ def find_netname(ip):
 def find_registrar(domain):
     try:
         d = whois.query(domain)
-
-        return d.registrar
+        if d != '':
+            return d.registrar
+        else:
+            return 'registrar not found'
     except:
         return 'registrar not found'
 
@@ -123,6 +125,9 @@ def answer_records(domain, records_list):
                 #print('Mail exchange:',rdata.exchange,'preference:',rdata.preference)
                 if q == 'MX':
                     rdata = rdata.exchange
+
+                if q == 'DNSKEY' or q=='CAA' or q == 'NSEC3PARAM':
+                    rdata = "DNSSEC"
 
                 is_ip(str(rdata))
 
@@ -269,7 +274,7 @@ def do_the_magic(label, domain):
 
     # DNS records
     global records
-    records = ['A', 'NS', 'AAAA', 'CNAME', 'MX', 'TXT', 'SOA']
+    records = ['A', 'NS', 'AAAA', 'CNAME', 'MX', 'TXT', 'SOA', 'CAA', 'RRSIG', 'DNSKEY', 'NSEC3PARAM']
     answer_records(domain, records)
 
     # get the ip of the answer and create node and link
