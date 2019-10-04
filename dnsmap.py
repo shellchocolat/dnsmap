@@ -8,6 +8,7 @@ from colorama import Fore
 import sys
 import os
 import re
+import whois
 from dataclasses import dataclass
 
 # CHANGE THIS
@@ -97,6 +98,16 @@ def find_netname(ip):
         netname = 'UNKNOWN'
 
     return netname
+
+
+def find_registrar(domain):
+    try:
+        d = whois.query(domain)
+
+        return d.registrar
+    except:
+        return 'registrar not found'
+
 
 def answer_records(domain, records_list):
     records = records_list
@@ -251,6 +262,11 @@ def do_the_magic(label, domain):
     # create the domain node
     create_node(label, domain)
 
+    # find registrar
+    registrar = find_registrar(domain)
+    create_node("REGISTRAR", registrar)
+    create_link(domain, 'REGISTRAR', registrar)
+
     # DNS records
     global records
     records = ['A', 'NS', 'AAAA', 'CNAME', 'MX', 'TXT', 'SOA']
@@ -361,6 +377,8 @@ def main():
     print("[*] display node+relations for 2 specific nodes:\n\t MATCH (n)-[r]->(m) WHERE n.name='NODE_1'OR n.name='NODE_2' RETURN n,r,m")
     print("[*] display node+relations for 1 specific node and a recursive depth of 2:\n\t MATCH (n)-[r*1..2]->(m) WHERE n.name='NODE' RETURN n,r,m  ")
     print("[*] or use regex to search all nodes that begins with 'tes':\n\t MATCH (n)-[r]->(m) WHERE n.name =~ 'tes.*' RETURN n,r,m")
+    print("[*] delete 1 node only:\n\t MATCH p=(n) WHERE n.name='test.com' DELETE p")
+    print("[*] delete node with all relationship with depth 4:\n\t MATCH p=(n)-[r*1..4]->(m) WHERE n.name='test.com' DETACH DELETE p")
     
 
 
