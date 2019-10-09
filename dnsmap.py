@@ -129,6 +129,7 @@ def answer_records(domain, records_list):
                 if q == 'DNSKEY' or q=='CAA' or q == 'NSEC3PARAM':
                     rdata = "DNSSEC"
 
+
                 is_ip(str(rdata))
 
                 create_node(node_name, str(rdata))
@@ -151,6 +152,24 @@ def answer_records(domain, records_list):
             #print(str(e))
 
     return True
+
+def dmarc_parse(n1, TXT_content):
+    TXT_content = TXT_content.replace('"', '')
+    elements = TXT_content.split('; ')
+
+    if "v=DMARC" not in elements[0]:
+        return False
+
+    dmarc_value = elements[0].replace("v=",'')
+    create_node('DMARC', dmarc_value)
+    create_link(n1, 'DMARC', dmarc_value)
+
+    for e in elements[1:]:
+        if "p=" in e:
+            p = e.replace("p=", "")
+            create_node("DMARC_POLICY", p)
+            create_link(n1, "DMARC_POLICY", p)
+
 
 def spf_parse(n1,TXT_content):
     TXT_content = TXT_content.replace('"', '')
@@ -286,6 +305,10 @@ def do_the_magic(label, domain):
             if 'v=spf' in link.node_to:
                 spf_parse(link.node_from, link.node_to)
 
+            if "v=DMARC" in link.node_to:
+                dmarc_parse(link.node_from, link.node_to)
+
+
         
 
 
@@ -353,6 +376,8 @@ def main():
     if domain:
         label = "DOMAIN"
         do_the_magic(label, domain)
+        do_the_magic("DMARC","_dmarc." + domain)
+        create_link(domain, "DMARC", "_dmarc."+domain)
 
     if domain_file:
         with open(domain_file, "r") as fp:
@@ -370,6 +395,8 @@ def main():
                     print(YELLOW + "[*] " + domain + " has already been added into the db"  +RESET)
 
                 Link_tab = []
+
+            do_the_magic("DMARC","_dmarc." + domain)
             
 
     print()
