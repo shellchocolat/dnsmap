@@ -155,20 +155,26 @@ def answer_records(domain, records_list):
 
 def dmarc_parse(n1, TXT_content):
     TXT_content = TXT_content.replace('"', '')
-    elements = TXT_content.split('; ')
+    TXT_content = TXT_content.replace(' ','')
+    elements = TXT_content.split(';')
 
     if "v=DMARC" not in elements[0]:
         return False
 
     dmarc_value = elements[0].replace("v=",'')
     create_node('DMARC', dmarc_value)
-    create_link(n1, 'DMARC', dmarc_value)
+    create_link(n1, 'DMARC_VERSION', dmarc_value)
 
     for e in elements[1:]:
-        if "p=" in e:
-            p = e.replace("p=", "")
-            create_node("DMARC_POLICY", p)
-            create_link(n1, "DMARC_POLICY", p)
+        if "sp" in e:
+            create_node("DMARC_POLICY", e)
+            create_link(n1, "SUBDOMAIN_DMARC_POLICY", e)
+        elif "p=" in e:
+            create_node("DMARC_POLICY", e)
+            create_link(n1, "DMARC_POLICY", e)
+        elif "pct" in e:
+            create_node("DMARC_POLICY", e)
+            create_link(n1, "PERCENT_DMARC_POLICY", e)
 
 
 def spf_parse(n1,TXT_content, records):
@@ -294,7 +300,6 @@ def do_the_magic(label, domain):
         create_link(domain, 'REGISTRAR', registrar)
 
         # DNS records
-        #global records
         records = ['A', 'NS', 'AAAA', 'CNAME', 'MX', 'TXT', 'SOA', 'CAA', 'RRSIG', 'DNSKEY', 'NSEC3PARAM']
         answer_records(domain, records)
 
@@ -342,7 +347,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--domain", help="domain name (example.com)")
     parser.add_argument("-f", "--file", help="all domain or subdomain in a file (file format: DOMAIN:domain.com\nSUBDOMAIN: sub.domain.com)")
-    parser.add_argument("-R", "--remove", help="remove all data into the neo4j db", action="store_true")
+    parser.add_argument("-R", "--removeAll", help="remove all datas into the neo4j db", action="store_true")
+    parser.add_argument("-r", "--remove", help="remove only datas for the current domain", action="store_true")
     parser.add_argument("-s", "--server", help="name server to use for DNS request (default: 8.8.8.8)")
     args = parser.parse_args()
 
@@ -371,16 +377,27 @@ def main():
     db = db_connect()
 
     # to clear the DB before making the DNS requests
-    if args.remove:
-        query = """ MATCH (n)-[r]->() DELETE n,r """
-        db.query(query)
-        query = """ MATCH (n) DELETE n"""
-        db.query(query)
+    if args.removeAll:
+        r = input(YELLOW + "[*] are you sure you want to delete all datas from the neo4j db? [y/N] " + RESET)
+        if r.lower() == "y":
+            query = """ MATCH (n)-[r]->() DELETE n,r """
+            db.query(query)
+            query = """ MATCH (n) DELETE n"""
+            db.query(query)
+        else:
+            print(GREEN + "[*] Good boy" + RESET)
+            sys.exit(1)
+
+
 
     global Link_tab
     Link_tab = []
 
     if domain:
+        if args.remove:
+            query = """MATCH p=(n)-[r*1..4]->(m) WHERE n.name='%s' DETACH DELETE p"""%(domain)
+            db.query(query)
+
         label = "DOMAIN"
         do_the_magic(label, domain)
         Link_tab = []
@@ -396,6 +413,10 @@ def main():
                 print("+++++++++++++++++++++++++++++ " + label)
                 print("+++++++++++++++++++++++++++++ " + domain)
                 print("+++++++++++++++++++++++++++++ ")
+
+                if args.remove:
+                    query = """MATCH p=(n)-[r*1..4]->(m) WHERE n.name='%s' DETACH DELETE p"""%(domain)
+                    db.query(query)
                 
                 if check_if_not_already_done(domain):
                     do_the_magic(label, domain)
