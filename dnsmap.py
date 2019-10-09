@@ -171,7 +171,7 @@ def dmarc_parse(n1, TXT_content):
             create_link(n1, "DMARC_POLICY", p)
 
 
-def spf_parse(n1,TXT_content):
+def spf_parse(n1,TXT_content, records):
     TXT_content = TXT_content.replace('"', '')
     elements = TXT_content.split(' ')
 
@@ -286,15 +286,22 @@ def do_the_magic(label, domain):
     # create the domain node
     create_node(label, domain)
 
-    # find registrar
-    registrar = find_registrar(domain)
-    create_node("REGISTRAR", registrar)
-    create_link(domain, 'REGISTRAR', registrar)
 
-    # DNS records
-    global records
-    records = ['A', 'NS', 'AAAA', 'CNAME', 'MX', 'TXT', 'SOA', 'CAA', 'RRSIG', 'DNSKEY', 'NSEC3PARAM']
-    answer_records(domain, records)
+    if "_dmarc." not in domain:
+        # find registrar
+        registrar = find_registrar(domain)
+        create_node("REGISTRAR", registrar)
+        create_link(domain, 'REGISTRAR', registrar)
+
+        # DNS records
+        #global records
+        records = ['A', 'NS', 'AAAA', 'CNAME', 'MX', 'TXT', 'SOA', 'CAA', 'RRSIG', 'DNSKEY', 'NSEC3PARAM']
+        answer_records(domain, records)
+
+    else: # for DMARC
+        records = ["TXT"]
+        answer_records(domain, records)
+
 
     # get the ip of the answer and create node and link
     for link in Link_tab:
@@ -303,7 +310,7 @@ def do_the_magic(label, domain):
                 answer_records(link.node_to, records)
 
             if 'v=spf' in link.node_to:
-                spf_parse(link.node_from, link.node_to)
+                spf_parse(link.node_from, link.node_to, records)
 
             if "v=DMARC" in link.node_to:
                 dmarc_parse(link.node_from, link.node_to)
@@ -376,6 +383,7 @@ def main():
     if domain:
         label = "DOMAIN"
         do_the_magic(label, domain)
+        Link_tab = []
         do_the_magic("DMARC","_dmarc." + domain)
         create_link(domain, "DMARC", "_dmarc."+domain)
 
