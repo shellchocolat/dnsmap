@@ -175,9 +175,6 @@ def dmarc_parse(n1, TXT_content):
         elif "pct" in e:
             create_node("DMARC_POLICY", e)
             create_link(n1, "PERCENT_DMARC_POLICY", e)
-        else:
-            create_node("DMARC_POLICY", e)
-            create_link(n1, "DMARC_else", e)
         
 
 
