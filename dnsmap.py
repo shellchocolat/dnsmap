@@ -134,7 +134,8 @@ def is_ip(string,record):
                 # usefull for scanning if needed
                 A_tab.append(string)
 
-            return True
+            ip = string
+            return ip
         else:
             return False
     else:
@@ -144,6 +145,8 @@ def parse_whois(ip):
     init_ip = ip
     if "/" in ip: # if there is a range like x.x.x.x/24
         ip, sep, ip_range = init_ip.partition("/")
+    else:
+        ip = init_ip
 
     try:
         # using whois to find network name, asn, ...
@@ -209,7 +212,7 @@ def answer_records(domain, records_list):
                 create_link(domain, node_name, str(rdata))
 
                 if yes_it_is_ip:
-                    parse_whois(str(data))
+                    parse_whois(yes_it_is_ip)
 
 
                 link = Link(domain, node_name, str(rdata), node_name, node_name)
