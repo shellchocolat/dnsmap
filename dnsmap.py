@@ -208,10 +208,11 @@ def answer_records(domain, records_list):
                 if q == 'DNSKEY' or q=='CAA' or q == 'NSEC3PARAM':
                     rdata = "DNSSEC"
 
-                if q == "A":
-                    is_ip(str(rdata), q)
-                else:
-                    is_ip(str(rdata), "")
+                is_ip(str(rdata), q)
+                #if q == "A":
+                #    is_ip(str(rdata), q)
+                #else:
+                #    is_ip(str(rdata), "")
 
                 create_node(node_name, str(rdata))
 
@@ -270,16 +271,16 @@ def spf_parse(n1,TXT_content, records):
     for e in elements[1:]:
         if 'ip4' in e:
             ip = e.replace('ip4:','')
-            create_node('IP', ip)
-            create_link(n1, 'IP', ip)
+            create_node('SPF_IP', ip)
+            create_link(n1, 'SPF_IP', ip)
 
             netname = find_netname(ip)
             create_node('netname', netname)
             create_link(ip, 'netname', netname)
         elif 'ip6' in e:
             ip = e.replace('ip6:','')
-            create_node('IP', ip)
-            create_link(n1, 'IP', ip)
+            create_node('SPF_IP', ip)
+            create_link(n1, 'SPF_IP', ip)
 
             netname = find_netname(ip)
             create_node('netname', netname)
