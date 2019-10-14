@@ -125,18 +125,6 @@ def is_ip_into_range(ip, ip_range):
     result = ip_address(ip) in net
     return result 
 
-def find_AS(ip):
-    # AS : Autonomous System is internet terminology for a collection of gateway (routers)
-    # the protocol used to communicate is BGP (Border Gateway Protocol)
-    c = Client()
-    r = c.lookup(ip)
-    asn = 'AS' + r.asn
-    owner = r.owner
-    create_node('autonomous_system', asn)
-    create_node('autonomous_system', owner)
-    create_link(asn, 'AS_owner', owner)
-    create_link(ip, 'AS_number', asn)
-    return (asn, owner)
 
 def is_ip(string,record):
     if string != None:
@@ -146,13 +134,6 @@ def is_ip(string,record):
                 # usefull for scanning if needed
                 A_tab.append(string)
 
-            parse_whois(string)
-
-            # find Autonomous System for each ip
-            #find_AS(string)
-            parse_whois(string)
-
-            #Link_tab.append( Link(string, 'IP', netname, 'netname', 'netname' ))
             return True
         else:
             return False
@@ -160,8 +141,9 @@ def is_ip(string,record):
         return False
 
 def parse_whois(ip):
+    init_ip = ip
     if "/" in ip: # if there is a range like x.x.x.x/24
-        ip, sep, ip_range = ip.partition("/")
+        ip, sep, ip_range = init_ip.partition("/")
 
     try:
         # using whois to find network name, asn, ...
@@ -169,18 +151,21 @@ def parse_whois(ip):
 
         res = obj.lookup_rdap()
 
-        as_number = "AS" + res["asn"]
-        as_owner = res["asn_description"]
-        create_node('autonomous_system', as_number)
-        create_node('autonomous_system', as_owner)
-        create_link(as_number, 'AS_owner', as_owner)
-        create_link(ip, 'AS_number', as_number)
-
-        netname = res['network']['name']
-        create_node('netname', netname)
-        create_link(ip, 'netname', netname)
     except:
-        pass
+        return False
+
+    as_number = "AS" + res["asn"]
+    as_owner = res["asn_description"]
+    create_node('autonomous_system', as_number)
+    create_node('autonomous_system', as_owner)
+    create_link(as_number, 'AS_owner', as_owner)
+    create_link(init_ip, 'AS_number', as_number)
+
+    netname = res['network']['name']
+    create_node('netname', netname)
+    create_link(init_ip, 'netname', netname)
+
+    return True
 
 
 def find_registrar(domain):
@@ -193,21 +178,6 @@ def find_registrar(domain):
     except:
         return 'registrar not found'
 
-def find_asn_description(ip):
-    if "/" in ip: # if there is a range like x.x.x.x/24
-        ip, sep, ip_range = ip.partition("/")
-
-    try:
-        # using whois to find asn description
-        obj = IPWhois(ip)
-
-        res = obj.lookup_rdap()
-
-        asn_description = res['asn_description']
-    except:
-        asn_description = 'UNKNOWN'
-
-    return n
 
 
 def answer_records(domain, records_list):
@@ -228,7 +198,7 @@ def answer_records(domain, records_list):
                 if q == 'DNSKEY' or q=='CAA' or q == 'NSEC3PARAM':
                     rdata = "DNSSEC"
 
-                is_ip(str(rdata), q)
+                yes_it_is_ip = is_ip(str(rdata), q)
                 #if q == "A":
                 #    is_ip(str(rdata), q)
                 #else:
@@ -237,6 +207,10 @@ def answer_records(domain, records_list):
                 create_node(node_name, str(rdata))
 
                 create_link(domain, node_name, str(rdata))
+
+                if yes_it_is_ip:
+                    parse_whois(str(data))
+
 
                 link = Link(domain, node_name, str(rdata), node_name, node_name)
                 if link not in Link_tab:
