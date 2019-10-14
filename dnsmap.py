@@ -3,7 +3,10 @@ import dns.resolver
 from ipwhois import IPWhois
 import socket
 import argparse
+import subprocess
 from neo4jrestclient.client import GraphDatabase
+from ipaddress import ip_network, ip_address
+from cymruwhois import Client
 from colorama import Fore
 import sys
 import os
@@ -68,13 +71,89 @@ def create_link(NODE_N, RELATION_R, NODE_M ):
                 print(str( e ))
 
 
-def is_ip(string):
+def zmap_scan(ip_lst):
+
+    #21: ftp
+    #22: ssh
+    #23: telnet
+    #25: smtp
+    #53: domain name system
+    #80: http
+    #110: pop3
+    #111: rpcbind
+    #135: msrpc
+    #139: netbios-ssn
+    #143: imap
+    #443: https
+    #445: microsoft-ds
+    #993: imaps
+    #995: pop3s
+    #1723: pptp
+    #3306: mysql
+    #3389: ms-wbt-server
+    #5900: vnc
+    #8080: http-proxy
+
+    ports = [21,22,23,25,53,80,110,111,135,139,143,443,445,993,995,1723,3306,3389,5900,8080]
+
+
+    ips = ""
+    for ip in ip_lst:
+        ips += ip + " " # construct a string like ip1 ip2 ip3 ...
+
+    for port in ports:
+        print(YELLOW + "[*] scannning for opened port " + str(port) + " ..." + RESET)
+        cmd = 'sudo zmap -p{0} -f saddr,sport,success -M tcp_synscan -o zmapoutput{2} -B 100k -c 2 -t 3 -v 0 {1}'.format(port,ips,port)
+        #print(cmd)
+        subprocess.call(cmd.split(), shell=False)
+
+    for port in ports:
+        with open("zmapoutput{0}".format(port), "r") as fp:
+            lines = fp.readlines()
+            lines = lines[1:]
+
+        for line in lines:
+                line = line.strip()
+                r = line.split(",")
+                if r[2] == "1":
+                    create_node('PORT', r[1])
+                    create_link(r[0], 'tcp_synscan', r[1])
+
+    
+def is_ip_into_range(ip, ip_range):
+    # True: ip is into the range
+    # False: ip is not into the range
+    result = ip_address(ip) in net
+    return result 
+
+def find_AS(ip):
+    # AS : Autonomous System is internet terminology for a collection of gateway (routers)
+    # the protocol used to communicate is BGP (Border Gateway Protocol)
+    c = Client()
+    r = c.lookup(ip)
+    asn = 'AS' + r.asn
+    owner = r.owner
+    create_node('autonomous_system', asn)
+    create_node('autonomous_system', owner)
+    create_link(asn, 'AS_owner', owner)
+    create_link(ip, 'AS_number', asn)
+    return (asn, owner)
+
+def is_ip(string,record):
     if string != None:
         # determine if the string is an ip
         if re.match('\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}', string) != None:
+            if record == "A":
+                # usefull for scanning if needed
+                A_tab.append(string)
+
             netname = find_netname(string)
             create_node('netname', netname)
             create_link(string, 'netname', netname)
+
+            # find Autonomous System for each ip
+            find_AS(string)
+
             #Link_tab.append( Link(string, 'IP', netname, 'netname', 'netname' ))
             return True
         else:
@@ -129,8 +208,10 @@ def answer_records(domain, records_list):
                 if q == 'DNSKEY' or q=='CAA' or q == 'NSEC3PARAM':
                     rdata = "DNSSEC"
 
-
-                is_ip(str(rdata))
+                if q == "A":
+                    is_ip(str(rdata), q)
+                else:
+                    is_ip(str(rdata), "")
 
                 create_node(node_name, str(rdata))
 
@@ -301,7 +382,7 @@ def do_the_magic(label, domain):
         create_link(domain, 'REGISTRAR', registrar)
 
         # DNS records
-        records = ['A', 'NS', 'AAAA', 'CNAME', 'MX', 'TXT', 'SOA', 'CAA', 'RRSIG', 'DNSKEY', 'NSEC3PARAM']
+        records = ['A', 'NS', 'AAAA', 'CNAME', 'MX', 'TXT', 'SPF', 'SRV', 'SOA', 'CAA', 'RRSIG', 'DNSKEY', 'NSEC3PARAM']
         answer_records(domain, records)
 
     else: # for DMARC
@@ -312,7 +393,7 @@ def do_the_magic(label, domain):
     # get the ip of the answer and create node and link
     for link in Link_tab:
         if link.node_to != None:
-            if not is_ip(link.node_to):
+            if not is_ip(link.node_to,""):
                 answer_records(link.node_to, records)
 
             if 'v=spf' in link.node_to:
@@ -351,6 +432,7 @@ def main():
     parser.add_argument("-R", "--removeAll", help="remove all datas into the neo4j db", action="store_true")
     parser.add_argument("-r", "--remove", help="remove only datas for the current domain", action="store_true")
     parser.add_argument("-s", "--server", help="name server to use for DNS request (default: 8.8.8.8)")
+    parser.add_argument("-S", "--scan", help="scan current ports for A records", action="store_true")
     args = parser.parse_args()
 
     if args.domain or args.file:
@@ -389,10 +471,15 @@ def main():
             print(GREEN + "[*] Good boy" + RESET)
             sys.exit(1)
 
+    if args.scan:
+        scan = True
+    else:
+        scan = False
 
 
-    global Link_tab
+    global Link_tab, A_tab
     Link_tab = []
+    A_tab = []
 
     if domain:
         if args.remove:
@@ -404,6 +491,9 @@ def main():
         Link_tab = []
         do_the_magic("DMARC","_dmarc." + domain)
         create_link(domain, "DMARC", "_dmarc."+domain)
+
+        if scan:
+            zmap_scan(A_tab)
 
     if domain_file:
         with open(domain_file, "r") as fp:
@@ -424,7 +514,11 @@ def main():
                 else:
                     print(YELLOW + "[*] " + domain + " has already been added into the db"  +RESET)
 
+                if scan:
+                    zmap_scan(A_tab)
+
                 Link_tab = []
+                A_tab = []
 
             do_the_magic("DMARC","_dmarc." + domain)
             
