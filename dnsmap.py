@@ -6,7 +6,6 @@ import argparse
 import subprocess
 from neo4jrestclient.client import GraphDatabase
 from ipaddress import ip_network, ip_address
-from cymruwhois import Client
 from colorama import Fore
 import sys
 import os
@@ -147,12 +146,11 @@ def is_ip(string,record):
                 # usefull for scanning if needed
                 A_tab.append(string)
 
-            netname = find_netname(string)
-            create_node('netname', netname)
-            create_link(string, 'netname', netname)
+            parse_whois(string)
 
             # find Autonomous System for each ip
-            find_AS(string)
+            #find_AS(string)
+            parse_whois(string)
 
             #Link_tab.append( Link(string, 'IP', netname, 'netname', 'netname' ))
             return True
@@ -161,22 +159,28 @@ def is_ip(string,record):
     else:
         return False
 
-def find_netname(ip):
-
+def parse_whois(ip):
     if "/" in ip: # if there is a range like x.x.x.x/24
         ip, sep, ip_range = ip.partition("/")
 
     try:
-        # using whois to find network name
+        # using whois to find network name, asn, ...
         obj = IPWhois(ip)
 
         res = obj.lookup_rdap()
 
-        netname = res['network']['name']
-    except:
-        netname = 'UNKNOWN'
+        as_number = "AS" + res["asn"]
+        as_owner = res["asn_description"]
+        create_node('autonomous_system', as_number)
+        create_node('autonomous_system', as_owner)
+        create_link(as_number, 'AS_owner', as_owner)
+        create_link(ip, 'AS_number', as_number)
 
-    return netname
+        netname = res['network']['name']
+        create_node('netname', netname)
+        create_link(ip, 'netname', netname)
+    except:
+        pass
 
 
 def find_registrar(domain):
@@ -188,6 +192,22 @@ def find_registrar(domain):
             return 'registrar not found'
     except:
         return 'registrar not found'
+
+def find_asn_description(ip):
+    if "/" in ip: # if there is a range like x.x.x.x/24
+        ip, sep, ip_range = ip.partition("/")
+
+    try:
+        # using whois to find asn description
+        obj = IPWhois(ip)
+
+        res = obj.lookup_rdap()
+
+        asn_description = res['asn_description']
+    except:
+        asn_description = 'UNKNOWN'
+
+    return n
 
 
 def answer_records(domain, records_list):
@@ -274,17 +294,13 @@ def spf_parse(n1,TXT_content, records):
             create_node('SPF_IP', ip)
             create_link(n1, 'SPF_IP', ip)
 
-            netname = find_netname(ip)
-            create_node('netname', netname)
-            create_link(ip, 'netname', netname)
+            parse_whois(ip)
         elif 'ip6' in e:
             ip = e.replace('ip6:','')
             create_node('SPF_IP', ip)
             create_link(n1, 'SPF_IP', ip)
 
-            netname = find_netname(ip)
-            create_node('netname', netname)
-            create_link(ip, 'netname', netname)
+            parse_whois(ip)
         elif 'all' in e:
             # all ip are authorized to send email (not good)
             # Pass = The address passed the test; accept the message. Example: "v=spf1 +all"
