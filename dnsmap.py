@@ -12,6 +12,9 @@ import os
 import re
 import whois
 from dataclasses import dataclass
+import requests
+import hashlib
+from bs4 import BeautifulSoup as bs
 
 # CHANGE THIS
 db_username = "neo4j"
@@ -33,41 +36,137 @@ class Link:
     relation: str
 
 
-def create_node(LABEL, NODE):
+def create_node(LABEL, NODE, TAG):
     """
         check if the node NODE with tag TAG exists
         if yes: do nothing
         if no: create the node
     """
     if NODE != None:
-        if doesThatFuckingNodeExist( NODE ) == True:
-            print(YELLOW + '[*] ('+NODE+') NOT created because it already exists with label: ' + LABEL + RESET)
+        if doesThatFuckingNodeExist( NODE, TAG ) == True:
+            print(YELLOW + '[*] ('+NODE+':'+TAG+') NOT created because it already exists with label: ' + LABEL + RESET)
         else:
-            print(GREEN + '[+] ('+NODE+') created with label: ' + LABEL + RESET)
+            print(GREEN + '[+] ('+NODE+':'+TAG+') created with label: ' + LABEL + RESET)
             try:
-                query = """CREATE (n: %s { name: '%s' })"""%( LABEL, NODE )
+                query = """CREATE (n: %s { name: '%s', tag: '%s' })"""%( LABEL, NODE, TAG )
                 db.query( query )
             except Exception as e:
-                print(RED + "[-] ("+NODE+") not created because empty value" + RESET)
+                print(RED + "[-] ("+NODE+":"+TAG+") not created because empty value" + RESET)
                 #print(str( e ))
 
-def create_link(NODE_N, RELATION_R, NODE_M ):
+    return True
+
+def create_link(NODE_N, TAG_N, RELATION_R, NODE_M, TAG_M ):
     """
         check if relation exists
         if yes: do nothing
         if no: create the relation
     """
     if NODE_N != None and NODE_M != None:
-        if doesThatCrazyLinkExist( NODE_N, RELATION_R, NODE_M ) == True:
-            print(YELLOW + '[*] ('+NODE_N+')-['+RELATION_R+']-('+NODE_M+') NOT created' + RESET)
+        if doesThatCrazyLinkExist( NODE_N, TAG_N, RELATION_R, NODE_M, TAG_M ) == True:
+            print(YELLOW + '[*] ('+NODE_N+':'+TAG_N+')-['+RELATION_R+']-('+NODE_M+':'+TAG_M+') NOT created' + RESET)
         else:
-            print(MAGENTA + '[+] ('+NODE_N+')-['+RELATION_R+']-('+NODE_M+') created' + RESET)
+            print(MAGENTA + '[+] ('+NODE_N+':'+TAG_N+')-['+RELATION_R+']-('+NODE_M+':'+TAG_M+') created' + RESET)
             try:
-                query = """ MATCH (n { name: '%s' }), (m { name: '%s' })
-                            CREATE (n)-[r:%s]->(m)"""%( NODE_N, NODE_M, RELATION_R )
+                query = """ MATCH (n { name: '%s', tag: '%s' }), (m { name: '%s', tag: '%s' })
+                            CREATE (n)-[r:%s]->(m)"""%( NODE_N, TAG_N, NODE_M, TAG_M, RELATION_R )
                 db.query( query )
             except Exception as e:
                 print(str( e ))
+
+    return True
+
+def is_website_exist(domain):
+    url = domain
+    headers = requests.utils.default_headers()
+    headers.update({'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0'})
+
+    req_http = requests.get('http://' + url, headers)
+    if req_http.status_code == 200:
+        content_http = get_website_content(req_http)
+        content_hash_http = calculate_hash(content_http)
+    else:
+        content_hash_http = ''
+
+    req_https = requests.get('https://' + url, headers)
+    if req_https.status_code == 200:
+        content_https = get_website_content(req_https)
+        content_hash_https = calculate_hash(content_https)
+    else:
+        content_hash_https = ''
+        
+    if content_hash_http == '' and content_hash_https == '':
+        # website does not exist
+        return False, False
+
+    if content_hash_http == content_hash_https:
+        # the http and https are the same website or there is a redirection
+        create_node('HTTPS', 'HTTPS', domain)
+        create_link(domain, '', 'PROTOCOL', 'HTTPS', domain)
+
+        create_node('HTTPS', 'https://'+url, '')
+        create_link('HTTPS', domain, 'HTTPS', 'https://'+url, '')
+
+        return False, content_https
+    else:
+        # http and https are not the same
+        create_node('HTTP', 'HTTP', domain)
+        create_link(domain, '', 'PROTOCOL', 'HTTP', domain)
+
+        create_node('HTTPS', 'HTTPS', domain)
+        create_link(domain, '', 'PROTOCOL', 'HTTPS', domain)
+
+        create_node('HTTP', 'http://'+url, '')
+        create_link('HTTP', domain, 'HTTP', 'http://'+url, '')
+
+        create_node('HTTPS', 'https://'+url, '')
+        create_link('HTTPS', domain, 'HTTPS', 'https://'+url, '')
+
+        return content_http, content_https
+
+
+
+
+
+def get_website_content(req):
+    return req.content
+
+def calculate_hash(content):
+    h = hashlib.sha1(content)
+    return h.hexdigest()
+
+def scrap_url(domain, content, HTTP):
+    # HTTP : HTTP or HTTPS
+    soup = bs(content, 'html.parser')
+
+    tags = ['a', 'script', 'img', 'link', 'iframe', 'form']
+    tag_attr = ['href', 'src', 'action']
+
+    for tag in tags:
+        for t in soup.find_all(tag):
+            for attr in tag_attr:
+                if t.has_attr(attr):
+                    find_path_traversal(domain, HTTP, t[attr], 'LFI_PT_'+tag)
+                    find_relative_path(domain, HTTP, t[attr], tag)
+
+
+def find_relative_path(domain, HTTP, url, tag):
+    # HTTP : HTTP or HTTPS
+    if url[0] == '/'  or url[0] == '.': # if the link begins with '/' or '.' and not 'http://'
+        create_node(tag, url, '')
+        create_link(HTTP, domain, tag, url, '')
+
+def find_path_traversal(domain, HTTP, url, tag):
+    # HTTP : HTTP or HTTPS
+    if 'http' in url and '../' in url:
+        create_node(tag, url, '')
+        create_link(HTTP, domain, tag, url, '')
+    if domain in url and '../' in url:
+        create_node(tag, url, '')
+        create_link(HTTP, domain, tag, url, '')
+
+
+
 
 
 def zmap_scan(ip_lst):
@@ -115,8 +214,8 @@ def zmap_scan(ip_lst):
                 line = line.strip()
                 r = line.split(",")
                 if r[2] == "1":
-                    create_node('PORT', r[1])
-                    create_link(r[0], 'tcp_synscan', r[1])
+                    create_node('PORT', r[1], '')
+                    create_link(r[0], '', 'tcp_synscan', r[1], '')
 
     
 def is_ip_into_range(ip, ip_range):
@@ -159,14 +258,14 @@ def parse_whois(ip):
 
     as_number = "AS" + res["asn"]
     as_owner = res["asn_description"]
-    create_node('autonomous_system', as_number)
-    create_node('autonomous_system', as_owner)
-    create_link(as_number, 'AS_owner', as_owner)
-    create_link(init_ip, 'AS_number', as_number)
+    create_node('autonomous_system', as_number, '')
+    create_node('autonomous_system', as_owner, '')
+    create_link(as_number, '', 'AS_owner', as_owner, '')
+    create_link(init_ip, '', 'AS_number', as_number, '')
 
     netname = res['network']['name']
-    create_node('netname', netname)
-    create_link(init_ip, 'netname', netname)
+    create_node('netname', netname, '')
+    create_link(init_ip, '', 'netname', netname, '')
 
     return True
 
@@ -207,15 +306,27 @@ def answer_records(domain, records_list):
                 #else:
                 #    is_ip(str(rdata), "")
 
-                create_node(node_name, str(rdata))
+                nodeLabel = node_name
+                nodeValue = str(rdata)
+                tagNodeValue = ''
+                create_node(nodeLabel, nodeValue, tagNodeValue)
 
-                create_link(domain, node_name, str(rdata))
+                if domain == init_domain:
+                    nodeFrom = 'DNS'
+                    tagNodeFrom = init_domain
+                else:
+                    nodeFrom = domain
+                    tagNodeFrom = ''
+                nodeTo = str(rdata)
+                tagNodeTo = ''
+                fromLinkTo = node_name
+    
+                create_link(nodeFrom, tagNodeFrom, fromLinkTo, nodeTo, tagNodeTo)
 
                 if yes_it_is_ip:
                     parse_whois(yes_it_is_ip)
 
-
-                link = Link(domain, node_name, str(rdata), node_name, node_name)
+                link = Link(nodeFrom, node_name, nodeTo, node_name, fromLinkTo)
                 if link not in Link_tab:
                     Link_tab.append( link )
 
@@ -232,34 +343,51 @@ def answer_records(domain, records_list):
 
     return True
 
-def dmarc_parse(n1, TXT_content):
+def dmarc_parse(n1, TXT_content, domain):
     TXT_content = TXT_content.replace('"', '')
     TXT_content = TXT_content.replace(' ','')
     elements = TXT_content.split(';')
+
+    if n1 == 'DNS':
+        node_from = 'DNS'
+        tag_node_from = init_domain
+    else:
+        node_from = n1
+        tag_node_from = ''
+
 
     if "v=DMARC" not in elements[0]:
         return False
 
     dmarc_value = elements[0].replace("v=",'')
-    create_node('DMARC', dmarc_value)
-    create_link(n1, 'DMARC_VERSION', dmarc_value)
+    create_node('DMARC', dmarc_value, '')
+    create_link(node_from, tag_node_from, 'DMARC_VERSION', dmarc_value, '')
 
     for e in elements[1:]:
         if "sp" in e:
-            create_node("DMARC_POLICY", e)
-            create_link(n1, "SUBDOMAIN_DMARC_POLICY", e)
+            create_node("DMARC_POLICY", e, '')
+            create_link(node_from, tag_node_from, "SUBDOMAIN_DMARC_POLICY", e, '')
         elif "p=" in e:
-            create_node("DMARC_POLICY", e)
-            create_link(n1, "DMARC_POLICY", e)
+            create_node("DMARC_POLICY", e, '')
+            create_link(node_from, tag_node_from, "DMARC_POLICY", e, '')
         elif "pct" in e:
-            create_node("DMARC_POLICY", e)
-            create_link(n1, "PERCENT_DMARC_POLICY", e)
+            create_node("DMARC_POLICY", e, '')
+            create_link(node_from, tag_node_from, "PERCENT_DMARC_POLICY", e, '')
+    
+    return True
         
 
 
-def spf_parse(n1,TXT_content, records):
+def spf_parse(n1,TXT_content, records, domain):
     TXT_content = TXT_content.replace('"', '')
     elements = TXT_content.split(' ')
+
+    if n1 == 'DNS':
+        node_from = 'DNS'
+        tag_node_from = init_domain
+    else:
+        node_from = n1
+        tag_node_from = ''
 
     if 'v=spf' not in elements[0]:
         return False
@@ -268,51 +396,53 @@ def spf_parse(n1,TXT_content, records):
     for e in elements[1:]:
         if 'ip4' in e:
             ip = e.replace('ip4:','')
-            create_node('SPF_IP', ip)
-            create_link(n1, 'SPF_IP', ip)
+            create_node('SPF_IP', ip, '')
+            create_link(node_from, tag_node_from,'SPF_IP', ip, '')
 
             parse_whois(ip)
         elif 'ip6' in e:
             ip = e.replace('ip6:','')
-            create_node('SPF_IP', ip)
-            create_link(n1, 'SPF_IP', ip)
+            create_node('SPF_IP', ip, '')
+            create_link(node_from, tag_node_from, 'SPF_IP', ip, '')
 
             parse_whois(ip)
         elif 'all' in e:
             # all ip are authorized to send email (not good)
             # Pass = The address passed the test; accept the message. Example: "v=spf1 +all"
             if e[0] == '+':
-                create_node('spf_all', '+all')
-                create_link(n1, 'spf_all', '+all')
+                create_node('spf_all', '+all', '')
+                create_link(node_from, tag_node_from, 'spf_all', '+all', '')
 
             # can send email with other server that those listed (not really good: email spoofing)
             # Soft Fail = The address failed the test, but the result is not definitive; accept & tag any non-compliant mail. Example: "v=spf1 ~all"
             elif e[0] == '~':
-                create_node('spf_all', '~all')
-                create_link(n1, 'spf_all', '~all')
+                create_node('spf_all', '~all', '')
+                create_link(node_from, tag_node_from, 'spf_all', '~all', '')
 
             # the spf specify that it is neutral and there could be other servers that could send email
             # Neutral = The address did not pass or fail the test; do whatever (probably accept the mail). Example: "v=spf1 ?all"
             elif e[0] == '?':
-                create_node('spf_all', '?all')
-                create_link(n1, 'spf_all', '?all')
+                create_node('spf_all', '?all', '')
+                create_link(node_from, tag_node_from, 'spf_all', '?all', '')
 
             # only the registred ip (x.x.x.x on the example below)is authorized
             # v=spf1 ip4:x.x.x.x –all
             # if v=spf1 -all, then domain cannot send email at all
             # (Hard) Fail = The address failed the test; bounce any e-mail that does not comply. Example: "v=spf1 -all"
             elif e[0] == '-':
-                create_node('spf_all', '-all')
-                create_link(n1, 'spf_all', '-all')
+                create_node('spf_all', '-all', '')
+                create_link(node_from, tag_node_from, 'spf_all', '-all', '')
 
         elif 'include' in e:
             inc = e.replace('include:','')
-            create_node('INCLUDE', inc)
-            create_link(n1, 'SPF_INCLUDE', inc)
+            create_node('INCLUDE', inc, '')
+            create_link(node_from, tag_node_from, 'SPF_INCLUDE', inc, '')
             answer_records(inc,records)
 
+    return True
 
-def doesThatFuckingNodeExist( NODE_NAME ):
+
+def doesThatFuckingNodeExist( NODE_NAME, TAG ):
     """
         try to get all node name and node tag
         then check if this particular node exist
@@ -333,23 +463,23 @@ def doesThatFuckingNodeExist( NODE_NAME ):
     else:
 
         for nodeAndTag in all_nodes:
-            if ( NODE_NAME in nodeAndTag  ):
+            if ( NODE_NAME in nodeAndTag and TAG in nodeAndTag):
                 return True # if node with that specific tag exist, return True
             else:
                 continue
         else: # if node with that specific tag does not exist, return False
             return False
 
-def doesThatCrazyLinkExist( NODE_N, RELATION_R, NODE_M ):
+def doesThatCrazyLinkExist( NODE_N, TAG_N, RELATION_R, NODE_M, TAG_M ):
     """
         try to get all relationships (links) between NODE_N and NODE_M
         if yes: return True
         if no: return False
     """
-    if( doesThatFuckingNodeExist( NODE_N ) == True and doesThatFuckingNodeExist( NODE_M ) == True ):
+    if( doesThatFuckingNodeExist( NODE_N, TAG_N ) == True and doesThatFuckingNodeExist( NODE_M, TAG_M ) == True ):
 
-        query = """ MATCH (n { name: '%s' })-[r:%s]->(m { name: '%s' })
-                    RETURN SIGN(COUNT(r))"""%( NODE_N, RELATION_R, NODE_M )
+        query = """ MATCH (n { name: '%s', tag: '%s' })-[r:%s]->(m { name: '%s', tag: '%s' })
+                    RETURN SIGN(COUNT(r))"""%( NODE_N, TAG_N, RELATION_R, NODE_M, TAG_M )
 
         try:
             results = db.query( query, data_contents=True )
@@ -366,16 +496,29 @@ def doesThatCrazyLinkExist( NODE_N, RELATION_R, NODE_M ):
 
 def do_the_magic(label, domain):
     # create the domain node
-    create_node(label, domain)
+    create_node(label, domain, '')
 
 
     if "_dmarc." not in domain:
+        # is there a website for the domain
+        # and return the content
+        content_http, content_https = is_website_exist(domain)
+        # find all urls referenced into the content
+        if content_http:
+            scrap_url(domain, content_http, 'HTTP')
+        if content_https:
+            scrap_url(domain, content_https, 'HTTPS')
+
         # find registrar
+        create_node("WHOIS", 'WHOIS', domain)
+        create_link(domain, '', 'WHOIS', 'WHOIS', domain)
         registrar = find_registrar(domain)
-        create_node("REGISTRAR", registrar)
-        create_link(domain, 'REGISTRAR', registrar)
+        create_node("REGISTRAR", registrar, '')
+        create_link('WHOIS', domain, 'REGISTRAR', registrar, '')
 
         # DNS records
+        create_node("DNS", 'DNS', domain)
+        create_link(domain, '', 'PROTOCOL', 'DNS', domain)
         records = ['A', 'NS', 'AAAA', 'CNAME', 'MX', 'TXT', 'SPF', 'SRV', 'SOA', 'CAA', 'RRSIG', 'DNSKEY', 'NSEC3PARAM']
         answer_records(domain, records)
 
@@ -391,17 +534,17 @@ def do_the_magic(label, domain):
                 answer_records(link.node_to, records)
 
             if 'v=spf' in link.node_to:
-                spf_parse(link.node_from, link.node_to, records)
+                spf_parse(link.node_from, link.node_to, records, domain)
 
             if "v=DMARC" in link.node_to:
-                dmarc_parse(link.node_from, link.node_to)
+                dmarc_parse(link.node_from, link.node_to, domain)
 
 
         
 
 
 def check_if_not_already_done(domain):
-    r = doesThatFuckingNodeExist( domain )
+    r = doesThatFuckingNodeExist( domain, '' )
 
     if r:
         return False # already done, so do not do it
@@ -470,6 +613,8 @@ def main():
     else:
         scan = False
 
+    global init_domain
+    init_domain = domain
 
     global Link_tab, A_tab
     Link_tab = []
@@ -477,14 +622,14 @@ def main():
 
     if domain:
         if args.remove:
-            query = """MATCH p=(n)-[r*1..4]->(m) WHERE n.name='%s' DETACH DELETE p"""%(domain)
+            query = """MATCH p=(n)-[r*1..10]->(m) WHERE n.name='%s' DETACH DELETE p"""%(domain)
             db.query(query)
 
         label = "DOMAIN"
         do_the_magic(label, domain)
         Link_tab = []
         do_the_magic("DMARC","_dmarc." + domain)
-        create_link(domain, "DMARC", "_dmarc."+domain)
+        create_link('DNS', domain, "DMARC", "_dmarc."+domain, '')
 
         if scan:
             zmap_scan(A_tab)
@@ -498,6 +643,8 @@ def main():
                 print("+++++++++++++++++++++++++++++ " + label)
                 print("+++++++++++++++++++++++++++++ " + domain)
                 print("+++++++++++++++++++++++++++++ ")
+
+                init_domain = domain # init_domain is a global variable
 
                 if args.remove:
                     query = """MATCH p=(n)-[r*1..4]->(m) WHERE n.name='%s' DETACH DELETE p"""%(domain)
@@ -515,6 +662,7 @@ def main():
                 A_tab = []
 
             do_the_magic("DMARC","_dmarc." + domain)
+            create_link('DNS', domain, "DMARC", "_dmarc."+domain, '')
             
 
     print()
