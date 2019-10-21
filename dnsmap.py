@@ -28,7 +28,7 @@ MAGENTA = Fore.MAGENTA
 RESET = Fore.RESET
 
 @dataclass
-class Link:
+class Link_rel:
     node_from: str
     node_from_name: str
     node_to: str
@@ -81,6 +81,9 @@ def is_website_exist(domain):
     headers = requests.utils.default_headers()
     headers.update({'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0'})
 
+    print('***************************************')
+    print(url)
+    print('***************************************')
     req_http = requests.get('http://' + url, headers)
     if req_http.status_code == 200:
         content_http = get_website_content(req_http)
@@ -104,9 +107,6 @@ def is_website_exist(domain):
         create_node('HTTPS', 'HTTPS', domain)
         create_link(domain, '', 'PROTOCOL', 'HTTPS', domain)
 
-        create_node('HTTPS', 'https://'+url, '')
-        create_link('HTTPS', domain, 'HTTPS', 'https://'+url, '')
-
         return False, content_https
     else:
         # http and https are not the same
@@ -115,12 +115,6 @@ def is_website_exist(domain):
 
         create_node('HTTPS', 'HTTPS', domain)
         create_link(domain, '', 'PROTOCOL', 'HTTPS', domain)
-
-        create_node('HTTP', 'http://'+url, '')
-        create_link('HTTP', domain, 'HTTP', 'http://'+url, '')
-
-        create_node('HTTPS', 'https://'+url, '')
-        create_link('HTTPS', domain, 'HTTPS', 'https://'+url, '')
 
         return content_http, content_https
 
@@ -135,7 +129,7 @@ def calculate_hash(content):
     h = hashlib.sha1(content)
     return h.hexdigest()
 
-def scrap_url(domain, content, HTTP):
+def scrap_url(domain, content, NODE_FROM):
     # HTTP : HTTP or HTTPS
     soup = bs(content, 'html.parser')
 
@@ -146,27 +140,76 @@ def scrap_url(domain, content, HTTP):
         for t in soup.find_all(tag):
             for attr in tag_attr:
                 if t.has_attr(attr):
-                    find_path_traversal(domain, HTTP, t[attr], 'LFI_PT_'+tag)
-                    find_relative_path(domain, HTTP, t[attr], tag)
+                    # too much link with that ....
+                    if 'http' in t[attr] and domain in t[attr]:
+                        find_parameter(NODE_FROM, t[attr], tag, True, False)
+                    find_path_traversal(NODE_FROM, t[attr], 'LFI_PT_'+tag)
+                    find_relative_path(NODE_FROM, t[attr], tag)
 
+    return True
 
-def find_relative_path(domain, HTTP, url, tag):
+def find_parameter(n1, url,tag, create_PARAM_YES_TF, create_PARAM_NO_TF):
+    if n1 == 'HTTP':
+        node_from = 'HTTP'
+        node_tag = init_domain
+    elif n1 == 'HTTPS':
+        node_from = 'HTTPS'
+        node_tag = init_domain
+    else:
+        node_from = n1
+        node_tag = ''
+
+    if "?" in url:
+        if create_PARAM_YES_TF:
+            create_node('PARAM_YES', url, '')
+            create_link(node_from, node_tag , 'PARAMETER', url, '')
+            create_link(node_from, node_tag, tag, url, '')
+    else:
+        if create_PARAM_NO_TF:
+            create_node('PARAM_NO', url, '')
+            create_link(node_from, node_tag, tag, url, '')
+    if url not in Link_temp_tab:
+        if 'http' not in url:
+            if url not in Link_all_tab:
+                Link_temp_tab.append(url)
+                Link_all_tab.append(url)
+
+def find_relative_path(n1, url, tag):
+    if n1 == 'HTTP':
+        node_from = 'HTTP'
+        node_tag = init_domain
+    elif n1 == 'HTTPS':
+        node_from = 'HTTPS'
+        node_tag = init_domain
+    else:
+        node_from = n1
+        node_tag = ''
     # HTTP : HTTP or HTTPS
     if url[0] == '/'  or url[0] == '.': # if the link begins with '/' or '.' and not 'http://'
-        create_node(tag, url, '')
-        create_link(HTTP, domain, tag, url, '')
+        if 'www.' not in url:
+            find_parameter(node_from, url, tag, True, False)
 
-def find_path_traversal(domain, HTTP, url, tag):
+
+def find_path_traversal(n1, url, tag):
+    if n1 == 'HTTP':
+        node_from = 'HTTP'
+        node_tag = init_domain
+    elif n1 == 'HTTPS':
+        node_from = 'HTTPS'
+        node_tag = init_domain
+    else:
+        node_from = n1
+        node_tag = ''
     # HTTP : HTTP or HTTPS
     if 'http' in url and '../' in url:
         create_node(tag, url, '')
-        create_link(HTTP, domain, tag, url, '')
-    if domain in url and '../' in url:
+        create_link(node_from, node_tag, tag, url, '')
+    if init_domain in url and '../' in url:
         create_node(tag, url, '')
-        create_link(HTTP, domain, tag, url, '')
+        create_link(node_from, node_tag, tag, url, '')
 
 
-
+    
 
 
 def zmap_scan(ip_lst):
@@ -282,7 +325,8 @@ def find_registrar(domain):
 
 
 
-def answer_records(domain, records_list):
+def answer_records(nameServerToUse, domain, records_list):
+    ns = nameServerToUse
     records = records_list
 
     for q in records:
@@ -300,11 +344,15 @@ def answer_records(domain, records_list):
                 if q == 'DNSKEY' or q=='CAA' or q == 'NSEC3PARAM':
                     rdata = "DNSSEC"
 
+                if q == 'NS':
+                    if rdata not in nameservers:
+                        nameservers.append(rdata)
+
+                if q == "AXFR":
+                    if rdata:
+                        rdata = "AXFR"
+
                 yes_it_is_ip = is_ip(str(rdata), q)
-                #if q == "A":
-                #    is_ip(str(rdata), q)
-                #else:
-                #    is_ip(str(rdata), "")
 
                 nodeLabel = node_name
                 nodeValue = str(rdata)
@@ -326,9 +374,9 @@ def answer_records(domain, records_list):
                 if yes_it_is_ip:
                     parse_whois(yes_it_is_ip)
 
-                link = Link(nodeFrom, node_name, nodeTo, node_name, fromLinkTo)
-                if link not in Link_tab:
-                    Link_tab.append( link )
+                link = Link_rel(nodeFrom, node_name, nodeTo, node_name, fromLinkTo)
+                if link not in Link_rel_tab:
+                    Link_rel_tab.append( link )
 
 
         except dns.resolver.NoAnswer:
@@ -378,7 +426,7 @@ def dmarc_parse(n1, TXT_content, domain):
         
 
 
-def spf_parse(n1,TXT_content, records, domain):
+def spf_parse(n1,TXT_content, nameServerToUse, records, domain):
     TXT_content = TXT_content.replace('"', '')
     elements = TXT_content.split(' ')
 
@@ -437,7 +485,7 @@ def spf_parse(n1,TXT_content, records, domain):
             inc = e.replace('include:','')
             create_node('INCLUDE', inc, '')
             create_link(node_from, tag_node_from, 'SPF_INCLUDE', inc, '')
-            answer_records(inc,records)
+            answer_records(nameServerToUse, inc,records)
 
     return True
 
@@ -494,20 +542,28 @@ def doesThatCrazyLinkExist( NODE_N, TAG_N, RELATION_R, NODE_M, TAG_M ):
         print(RED + "[-] one or two nodes are missing in order to check if a relationship exists between ("+NODE_N+") and ("+NODE_M+")" + RESET)
         return True # do as the relation exist and not try to create one
 
-def do_the_magic(label, domain):
+def zone_transfer(name_server, domain):
+    records = ["AXFR"]
+    answer_records(name_server, domain, records)
+
+def do_the_magic(nameServerToUse, label, domain):
     # create the domain node
     create_node(label, domain, '')
 
 
     if "_dmarc." not in domain:
-        # is there a website for the domain
-        # and return the content
-        content_http, content_https = is_website_exist(domain)
-        # find all urls referenced into the content
-        if content_http:
-            scrap_url(domain, content_http, 'HTTP')
-        if content_https:
-            scrap_url(domain, content_https, 'HTTPS')
+        try:
+            # is there a website for the domain
+            # and return the content
+            content_http, content_https = is_website_exist(domain)
+            # find all urls referenced into the content
+            if content_http:
+                scrap_url(domain, content_http, 'HTTP')
+            if content_https:
+                scrap_url(domain, content_https, 'HTTPS')
+        except:
+            pass
+            
 
         # find registrar
         create_node("WHOIS", 'WHOIS', domain)
@@ -520,25 +576,27 @@ def do_the_magic(label, domain):
         create_node("DNS", 'DNS', domain)
         create_link(domain, '', 'PROTOCOL', 'DNS', domain)
         records = ['A', 'NS', 'AAAA', 'CNAME', 'MX', 'TXT', 'SPF', 'SRV', 'SOA', 'CAA', 'RRSIG', 'DNSKEY', 'NSEC3PARAM']
-        answer_records(domain, records)
+        answer_records(nameServerToUse, domain, records)
 
     else: # for DMARC
         records = ["TXT"]
-        answer_records(domain, records)
+        answer_records(nameServerToUse, domain, records)
 
 
     # get the ip of the answer and create node and link
-    for link in Link_tab:
+    for link in Link_rel_tab:
         if link.node_to != None:
             if not is_ip(link.node_to,""):
-                answer_records(link.node_to, records)
+                answer_records(nameServerToUse, link.node_to, records)
 
             if 'v=spf' in link.node_to:
-                spf_parse(link.node_from, link.node_to, records, domain)
+                spf_parse(link.node_from, link.node_to, nameServerToUse, records, domain)
 
             if "v=DMARC" in link.node_to:
                 dmarc_parse(link.node_from, link.node_to, domain)
 
+
+        
 
         
 
@@ -586,11 +644,10 @@ def main():
         sys.exit(1)
 
     # name server to use to do DNS requests
-    global ns
     if args.server:
-        ns = args.server
+        nameServerToUse = args.server
     else:
-        ns = "8.8.8.8"
+        nameServerToUse = "8.8.8.8"
 
 
     global db
@@ -613,12 +670,16 @@ def main():
     else:
         scan = False
 
-    global init_domain
+    global init_domain, nameservers
     init_domain = domain
+    nameservers = []
 
-    global Link_tab, A_tab
-    Link_tab = []
-    A_tab = []
+    global Link_rel_tab, A_tab, Link_temp_tab, Link_all_tab
+    Link_rel_tab = [] # contains link relation used to make relation between nodes
+    A_tab = [] # contains all the A records in order to port scan eventually
+    Link_temp_tab = [] # contains direct link into a website on a given page
+    Link_all_tab = [] # contains all links for the specified domain
+
 
     if domain:
         if args.remove:
@@ -626,13 +687,21 @@ def main():
             db.query(query)
 
         label = "DOMAIN"
-        do_the_magic(label, domain)
+        do_the_magic(nameServerToUse, label, domain)
+        Link_rel_tab = []
         Link_tab = []
-        do_the_magic("DMARC","_dmarc." + domain)
+        do_the_magic(nameServerToUse, "DMARC","_dmarc." + domain)
         create_link('DNS', domain, "DMARC", "_dmarc."+domain, '')
 
         if scan:
             zmap_scan(A_tab)
+
+        for n in nameservers:
+            zone_transfer(n, domain)
+
+        nameservers = [] # reset the list
+        Link_rel_tab = []
+        A_tab = []
 
     if domain_file:
         with open(domain_file, "r") as fp:
@@ -651,17 +720,21 @@ def main():
                     db.query(query)
                 
                 if check_if_not_already_done(domain):
-                    do_the_magic(label, domain)
+                    do_the_magic(nameServerToUse, label, domain)
                 else:
                     print(YELLOW + "[*] " + domain + " has already been added into the db"  +RESET)
 
                 if scan:
                     zmap_scan(A_tab)
 
-                Link_tab = []
+                for n in nameservers:
+                    zone_transfer(n, domain)
+
+                nameservers = [] # reset the list
+                Link_rel_tab = []
                 A_tab = []
 
-            do_the_magic("DMARC","_dmarc." + domain)
+            do_the_magic(nameServerToUse, "DMARC","_dmarc." + domain)
             create_link('DNS', domain, "DMARC", "_dmarc."+domain, '')
             
 
