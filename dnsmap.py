@@ -310,6 +310,17 @@ def parse_whois(ip):
     create_node('netname', netname, '')
     create_link(init_ip, '', 'netname', netname, '')
 
+    cidr = res['network']['cidr']
+    create_node('INETNUM', cidr, '')
+    create_link(init_ip, '', 'INETNUM', cidr, '')
+
+    try:
+        description = res['network']['remarks'][0]['description']
+        create_node('DESCRIPTION', description, '')
+        create_link(init_ip, '', 'DESCRIPTION', description, '')
+    except:
+        pass
+    
     return True
 
 
