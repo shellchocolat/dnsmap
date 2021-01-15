@@ -6,6 +6,7 @@ RUN pip install --upgrade IPWhois \
 	&& pip install --upgrade whois \
 	&& pip install --upgrade neo4jrestclient \
 	&& pip install --upgrade colorama \
+	&& pip install --upgrade beautifulsoup4 \
 	&& pip install --upgrade argparse 
 
 ADD dnsmap.py /
