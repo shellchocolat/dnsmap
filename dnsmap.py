@@ -4,7 +4,7 @@ from ipwhois import IPWhois
 import socket
 import argparse
 import subprocess
-from neo4jrestclient.client import GraphDatabase
+from neo4j import GraphDatabase
 from ipaddress import ip_network, ip_address
 from colorama import Fore
 import sys
@@ -48,8 +48,9 @@ def create_node(LABEL, NODE, TAG):
         else:
             print(GREEN + '[+] ('+NODE+':'+TAG+') created with label: ' + LABEL + RESET)
             try:
-                query = """CREATE (n: %s { name: '%s', tag: '%s' })"""%( LABEL, NODE, TAG )
-                db.query( query )
+                with db.session() as session:
+                    query = """CREATE (n: %s { name: '%s', tag: '%s' })"""%( LABEL, NODE, TAG )
+                    session.run(query)
             except Exception as e:
                 print(RED + "[-] ("+NODE+":"+TAG+") not created because empty value" + RESET)
                 #print(str( e ))
@@ -68,9 +69,10 @@ def create_link(NODE_N, TAG_N, RELATION_R, NODE_M, TAG_M ):
         else:
             print(MAGENTA + '[+] ('+NODE_N+':'+TAG_N+')-['+RELATION_R+']-('+NODE_M+':'+TAG_M+') created' + RESET)
             try:
-                query = """ MATCH (n { name: '%s', tag: '%s' }), (m { name: '%s', tag: '%s' })
+                with db.session() as session:
+                    query = """ MATCH (n { name: '%s', tag: '%s' }), (m { name: '%s', tag: '%s' })
                             CREATE (n)-[r:%s]->(m)"""%( NODE_N, TAG_N, NODE_M, TAG_M, RELATION_R )
-                db.query( query )
+                    session.run(query)
             except Exception as e:
                 print(str( e ))
 
@@ -511,22 +513,19 @@ def doesThatFuckingNodeExist( NODE_NAME, TAG ):
     """
     query = """ MATCH (n)
                 RETURN n.name, n.tag"""
-    try:
-        results = db.query( query, data_contents=True ) # get nodes
-        all_nodes = results.rows
-    except Exception as e:
-        print(str( e ))
+    with db.session() as session:
+        try:
+            results = session.run(query)
+        except Exception as e:
+            print(str( e ))
+            results = []
 
-    if all_nodes == None:
-        return False # if there is no node at all in the neo4j database
-    else:
-
-        for nodeAndTag in all_nodes:
-            if ( NODE_NAME in nodeAndTag and TAG in nodeAndTag):
-                return True # if node with that specific tag exist, return True
+        for nodeAndTag in results:
+            if (NODE_NAME in nodeAndTag and TAG in nodeAndTag):
+                return True
             else:
                 continue
-        else: # if node with that specific tag does not exist, return False
+        else:
             return False
 
 def doesThatCrazyLinkExist( NODE_N, TAG_N, RELATION_R, NODE_M, TAG_M ):
@@ -541,12 +540,14 @@ def doesThatCrazyLinkExist( NODE_N, TAG_N, RELATION_R, NODE_M, TAG_M ):
                     RETURN SIGN(COUNT(r))"""%( NODE_N, TAG_N, RELATION_R, NODE_M, TAG_M )
 
         try:
-            results = db.query( query, data_contents=True )
-
-            if results.rows[0][0] == 1: 
-                return True # if relation exist, return True
-            else: 
-                return False # if relation does not exist, return False
+            with db.session() as session:
+                #results = db.query( query, data_contents=True )
+                results = session.run(query)
+                for r in results:
+                    if r[0] == 1: 
+                        return True # if relation exist, return True
+                    else: 
+                        return False # if relation does not exist, return False
         except Exception as e:
             print(str( e ))
     else:#
@@ -624,11 +625,13 @@ def check_if_not_already_done(domain):
 
 def db_connect():
     try:
-        db = GraphDatabase('http://192.168.42.1:7474', username=db_username, password=db_password)
+        db = GraphDatabase.driver('neo4j://192.168.42.1:7687', auth=(db_username, db_password))
+        return db
     except Exception as e:
         print(str(e))
+        print("error connecting to the neo4j database")
+        return False
 
-    return db
 
 def main():
 
@@ -663,15 +666,19 @@ def main():
 
     global db
     db = db_connect()
+    if not db:
+        sys.exit(0)
+
 
     # to clear the DB before making the DNS requests
     if args.removeAll:
         r = input(YELLOW + "[*] are you sure you want to delete all datas from the neo4j db? [y/N] " + RESET)
         if r.lower() == "y":
-            query = """ MATCH (n)-[r]->() DELETE n,r """
-            db.query(query)
-            query = """ MATCH (n) DELETE n"""
-            db.query(query)
+            with db.session() as session:
+                query = """ MATCH (n)-[r]->() DELETE n,r """
+                session.run(query)
+                query = """ MATCH (n) DELETE n"""
+                session.run(query)
         else:
             print(GREEN + "[*] Good boy" + RESET)
             sys.exit(1)
@@ -694,8 +701,9 @@ def main():
 
     if domain:
         if args.remove:
-            query = """MATCH p=(n)-[r*1..10]->(m) WHERE n.name='%s' DETACH DELETE p"""%(domain)
-            db.query(query)
+            with db.session() as session:
+                query = """MATCH p=(n)-[r*1..10]->(m) WHERE n.name='%s' DETACH DELETE p"""%(domain)
+                session.run(query)
 
         label = "DOMAIN"
         do_the_magic(nameServerToUse, label, domain)
@@ -727,8 +735,9 @@ def main():
                 init_domain = domain # init_domain is a global variable
 
                 if args.remove:
-                    query = """MATCH p=(n)-[r*1..4]->(m) WHERE n.name='%s' DETACH DELETE p"""%(domain)
-                    db.query(query)
+                    with db.session() as session:
+                        query = """MATCH p=(n)-[r*1..4]->(m) WHERE n.name='%s' DETACH DELETE p"""%(domain)
+                        session.run(query)
                 
                 if check_if_not_already_done(domain):
                     do_the_magic(nameServerToUse, label, domain)
